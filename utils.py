@@ -32,7 +32,7 @@ except Exception as e:
 # News Extraction Functions
 def search_news_articles(company_name: str, num_articles: int = 15) -> List[Dict[str, Any]]:
     """
-    Search for news articles related to a company using various sources.
+    Search for news articles related to a company using Google News.
     
     Args:
         company_name: Name of the company to search for
@@ -43,88 +43,171 @@ def search_news_articles(company_name: str, num_articles: int = 15) -> List[Dict
     """
     logger.info(f"Searching for news articles about {company_name}")
     
-    # Since we're having issues with real-time scraping, let's use a more reliable approach
-    # with sample data for demonstration purposes
+    articles = []
     
-    # In a production environment, you would use a news API like NewsAPI, GNews, or similar
-    
-    # Sample data for demonstration
-    sample_articles = [
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-1",
-            "source": "Business News"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-2",
-            "source": "Tech News"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-3",
-            "source": "Financial Times"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-4",
-            "source": "Market Watch"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-5",
-            "source": "Business Insider"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-6",
-            "source": "CNBC"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-7",
-            "source": "Reuters"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-8",
-            "source": "Bloomberg"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-9",
-            "source": "Wall Street Journal"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-10",
-            "source": "Forbes"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-11",
-            "source": "CNN Business"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-12",
-            "source": "BBC Business"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-13",
-            "source": "The Economist"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-14",
-            "source": "Financial Post"
-        },
-        {
-            "url": f"https://example.com/news/{company_name.lower()}-article-15",
-            "source": "Yahoo Finance"
+    try:
+        # Format the search query for Google News
+        query = f"{company_name} company news"
+        query = query.replace(' ', '+')
+        
+        # Google News URL
+        url = f"https://news.google.com/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+        
+        # Set headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0'
         }
-    ]
+        
+        # Send request to Google News
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find article elements
+            article_elements = soup.select('article')
+            
+            for article in article_elements:
+                if len(articles) >= num_articles:
+                    break
+                
+                # Extract article link
+                link_element = article.select_one('a[href^="./article"]')
+                if not link_element:
+                    continue
+                
+                # Get the relative URL and convert to absolute URL
+                relative_url = link_element['href']
+                if relative_url.startswith('./'):
+                    relative_url = relative_url[2:]  # Remove './' prefix
+                
+                article_url = f"https://news.google.com/{relative_url}"
+                
+                # Extract source
+                source_element = article.select_one('div[data-n-tid="9"]')
+                source = source_element.text if source_element else "Unknown Source"
+                
+                articles.append({
+                    "url": article_url,
+                    "source": source
+                })
+            
+            logger.info(f"Found {len(articles)} articles from Google News")
+        else:
+            logger.warning(f"Failed to fetch news from Google News: Status code {response.status_code}")
     
-    # Shuffle the articles to simulate random selection
-    import random
-    random.shuffle(sample_articles)
+    except Exception as e:
+        logger.error(f"Error searching for news articles: {e}")
     
-    # Return the requested number of articles
-    articles = sample_articles[:num_articles]
+    # If we couldn't get enough articles, try alternative sources
+    if len(articles) < num_articles:
+        try:
+            # Try another source like Bing News
+            query = f"{company_name} company news"
+            query = query.replace(' ', '+')
+            
+            url = f"https://www.bing.com/news/search?q={query}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Find news cards
+                news_cards = soup.select('.news-card')
+                
+                for card in news_cards:
+                    if len(articles) >= num_articles:
+                        break
+                    
+                    link_element = card.select_one('a.title')
+                    if not link_element or 'href' not in link_element.attrs:
+                        continue
+                    
+                    article_url = link_element['href']
+                    
+                    # Extract source
+                    source_element = card.select_one('.source')
+                    source = source_element.text if source_element else "Unknown Source"
+                    
+                    # Check if this URL is already in our list
+                    if not any(article['url'] == article_url for article in articles):
+                        articles.append({
+                            "url": article_url,
+                            "source": source
+                        })
+                
+                logger.info(f"Found additional {len(articles)} articles from Bing News")
+            else:
+                logger.warning(f"Failed to fetch news from Bing News: Status code {response.status_code}")
+        
+        except Exception as e:
+            logger.error(f"Error searching for additional news articles: {e}")
     
-    logger.info(f"Found {len(articles)} sample articles for demonstration")
+    # Try a third source if we still don't have enough articles
+    if len(articles) < num_articles:
+        try:
+            # Try Yahoo Finance
+            query = f"{company_name}"
+            query = query.replace(' ', '%20')
+            
+            url = f"https://finance.yahoo.com/quote/{query}/news"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Find news links
+                news_links = soup.select('a[href^="/news/"]')
+                
+                for link in news_links:
+                    if len(articles) >= num_articles:
+                        break
+                    
+                    if 'href' not in link.attrs:
+                        continue
+                    
+                    relative_url = link['href']
+                    article_url = f"https://finance.yahoo.com{relative_url}"
+                    
+                    # Check if this URL is already in our list
+                    if not any(article['url'] == article_url for article in articles):
+                        articles.append({
+                            "url": article_url,
+                            "source": "Yahoo Finance"
+                        })
+                
+                logger.info(f"Found additional {len(articles)} articles from Yahoo Finance")
+            else:
+                logger.warning(f"Failed to fetch news from Yahoo Finance: Status code {response.status_code}")
+        
+        except Exception as e:
+            logger.error(f"Error searching for additional news articles from Yahoo Finance: {e}")
+    
+    # Ensure we don't return more than requested
+    articles = articles[:num_articles]
+    
+    logger.info(f"Returning {len(articles)} articles for analysis")
     return articles
 
 def extract_article_content(url: str, source: str) -> Dict[str, Any]:
     """
-    Extract content from a news article URL.
+    Extract content from a news article URL using BeautifulSoup.
     
     Args:
         url: URL of the article
@@ -133,144 +216,118 @@ def extract_article_content(url: str, source: str) -> Dict[str, Any]:
     Returns:
         Dictionary containing article details
     """
-    logger.info(f"Generating sample content for {url}")
+    logger.info(f"Extracting content from {url}")
     
-    # Since we're using sample data, let's generate some realistic content
-    # In a production environment, you would scrape the actual content from the URL
+    # Initialize default values
+    title = ""
+    content = ""
+    summary = ""
+    article_date = ""
     
-    # Extract article number from URL for consistent generation
-    article_num = url.split('-')[-1]
-    
-    # Company name from URL
-    company_name = url.split('/')[-1].split('-')[0].capitalize()
-    
-    # Sample titles based on source and sentiment
-    positive_titles = [
-        f"{company_name} Reports Record Quarterly Profits",
-        f"{company_name} Exceeds Analyst Expectations in Q2",
-        f"{company_name} Announces Major Expansion Plans",
-        f"{company_name} Stock Surges After Strong Earnings Report",
-        f"{company_name} Unveils Innovative New Product Line"
-    ]
-    
-    negative_titles = [
-        f"{company_name} Misses Earnings Targets, Shares Drop",
-        f"{company_name} Faces Regulatory Scrutiny Over Business Practices",
-        f"{company_name} Announces Layoffs Amid Restructuring",
-        f"{company_name} Recalls Products Due to Safety Concerns",
-        f"{company_name} Loses Key Executive in Surprise Departure"
-    ]
-    
-    neutral_titles = [
-        f"{company_name} Announces Quarterly Earnings Results",
-        f"{company_name} Holds Annual Shareholder Meeting",
-        f"{company_name} CEO Speaks at Industry Conference",
-        f"{company_name} Updates Corporate Strategy",
-        f"{company_name} Releases Statement on Market Conditions"
-    ]
-    
-    # Determine sentiment based on article number for consistency
-    sentiment_seed = int(article_num) % 3
-    if sentiment_seed == 0:
-        sentiment = "Positive"
-        titles = positive_titles
-    elif sentiment_seed == 1:
-        sentiment = "Negative"
-        titles = negative_titles
-    else:
-        sentiment = "Neutral"
-        titles = neutral_titles
-    
-    # Select title based on article number
-    title_index = int(article_num) % len(titles)
-    title = titles[title_index]
-    
-    # Generate sample content based on sentiment
-    if sentiment == "Positive":
-        content = f"""
-        {company_name} has reported exceptional performance in the latest quarter, exceeding analyst expectations. 
-        The company's revenue grew by 15% year-over-year, reaching $2.7 billion. 
-        This growth was primarily driven by strong performance in their core business segments and expansion into new markets.
-        
-        The CEO stated, "We are pleased with our performance this quarter. Our strategic investments are paying off, and we're seeing strong customer adoption across our product lines."
-        
-        Analysts have responded positively to the news, with several upgrading their price targets for {company_name} stock. 
-        The company also announced plans to expand operations in Asia and Europe, which is expected to further drive growth in the coming years.
-        
-        {company_name} also reported improvements in operational efficiency, with profit margins increasing by 2.5 percentage points compared to the same period last year.
-        """
-    elif sentiment == "Negative":
-        content = f"""
-        {company_name} has reported disappointing results for the latest quarter, falling short of market expectations. 
-        The company's revenue declined by 8% year-over-year to $1.9 billion, while profits fell by 12%.
-        
-        The CEO acknowledged the challenges, stating, "We faced significant headwinds this quarter, including supply chain disruptions and increased competition in key markets."
-        
-        Following the announcement, {company_name}'s stock price dropped by 7% in after-hours trading. 
-        Several analysts have downgraded their outlook for the company, citing concerns about its ability to maintain market share.
-        
-        The company also announced a restructuring plan that includes reducing its workforce by approximately 5% to cut costs and improve operational efficiency.
-        """
-    else:  # Neutral
-        content = f"""
-        {company_name} has released its quarterly financial results, reporting revenue of $2.2 billion, which is in line with analyst expectations.
-        
-        The company maintained its market position despite challenging economic conditions, with flat year-over-year growth.
-        
-        During the earnings call, the CEO discussed the company's ongoing strategic initiatives and provided an update on product development timelines.
-        
-        {company_name} reaffirmed its full-year guidance, projecting revenue growth between 3% and 5% for the fiscal year.
-        
-        The company also announced several new partnerships aimed at expanding its presence in emerging markets, though specific financial impacts were not disclosed.
-        """
-    
-    # Clean up content
-    content = ' '.join([line.strip() for line in content.split('\n')])
-    
-    # Create a simple summary (first 2-3 sentences)
-    sentences = content.split('.')
-    summary = '.'.join(sentences[:min(3, len(sentences))]) + '.'
-    
-    # Generate a realistic date (within the last month)
-    import datetime
-    import random
-    today = datetime.datetime.now()
-    days_ago = random.randint(1, 30)
-    article_date = (today - datetime.timedelta(days=days_ago)).strftime("%B %d, %Y")
-    
-    # Generate sentiment scores directly based on the predetermined sentiment
-    if sentiment == "Positive":
-        sentiment_data = {
-            "compound": 0.8,
-            "positive": 0.7,
-            "negative": 0.05,
-            "neutral": 0.25,
-            "category": "Positive"
+    try:
+        # Set headers to mimic a browser request
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0'
         }
-    elif sentiment == "Negative":
-        sentiment_data = {
-            "compound": -0.7,
-            "positive": 0.05,
-            "negative": 0.65,
-            "neutral": 0.3,
-            "category": "Negative"
-        }
-    else:  # Neutral
-        sentiment_data = {
-            "compound": 0.0,
-            "positive": 0.2,
-            "negative": 0.2,
-            "neutral": 0.6,
-            "category": "Neutral"
+        
+        # Send request to the article URL
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract title - try different common patterns
+            if not title:
+                title_element = soup.find('h1') or soup.find('title')
+                if title_element:
+                    title = title_element.text.strip()
+            
+            # Extract date - try different common patterns
+            date_elements = soup.select('time') or soup.select('[datetime]') or soup.select('.date, .published, .publish-date, .timestamp')
+            if date_elements:
+                article_date = date_elements[0].text.strip()
+                # If date is empty but has datetime attribute
+                if not article_date and 'datetime' in date_elements[0].attrs:
+                    article_date = date_elements[0]['datetime'].split('T')[0]
+            
+            # If no date found, use current date
+            if not article_date:
+                import datetime
+                article_date = datetime.datetime.now().strftime("%B %d, %Y")
+            
+            # Extract content - try different common patterns
+            content_elements = soup.select('article') or soup.select('.article-body') or soup.select('.story-body')
+            
+            if content_elements:
+                # Get all paragraphs from the content element
+                paragraphs = content_elements[0].find_all('p')
+                content = ' '.join([p.text.strip() for p in paragraphs])
+            else:
+                # Fallback: get all paragraphs from the body
+                paragraphs = soup.find_all('p')
+                # Filter out short paragraphs that are likely not part of the main content
+                paragraphs = [p for p in paragraphs if len(p.text.strip()) > 50]
+                content = ' '.join([p.text.strip() for p in paragraphs])
+            
+            # Clean up content
+            content = re.sub(r'\s+', ' ', content).strip()
+            
+            # Create a summary (first 2-3 sentences)
+            sentences = content.split('.')
+            summary = '.'.join(sentences[:min(3, len(sentences))]) + '.'
+            
+            logger.info(f"Successfully extracted content from {url}")
+        else:
+            logger.warning(f"Failed to fetch article content: Status code {response.status_code}")
+            return {
+                "title": "",
+                "content": "",
+                "summary": "",
+                "url": url,
+                "source": source,
+                "date": "",
+                "sentiment": analyze_sentiment(""),
+                "topics": []
+            }
+    
+    except Exception as e:
+        logger.error(f"Error extracting article content: {e}")
+        return {
+            "title": "",
+            "content": "",
+            "summary": "",
+            "url": url,
+            "source": source,
+            "date": "",
+            "sentiment": analyze_sentiment(""),
+            "topics": []
         }
     
-    # Generate sample topics based on content
-    if sentiment == "Positive":
-        topics = ["Quarterly Results", "Revenue Growth", "Market Expansion", "Investor Confidence", "Profitability"]
-    elif sentiment == "Negative":
-        topics = ["Financial Decline", "Market Challenges", "Restructuring", "Competition", "Cost Cutting"]
-    else:  # Neutral
-        topics = ["Financial Results", "Corporate Strategy", "Market Position", "Business Operations", "Industry Trends"]
+    # If we couldn't extract meaningful content, return empty content
+    if not title or not content or len(content) < 100:
+        logger.warning(f"Extracted content was insufficient")
+        return {
+            "title": title or "",
+            "content": "",
+            "summary": "",
+            "url": url,
+            "source": source,
+            "date": article_date or "",
+            "sentiment": analyze_sentiment(""),
+            "topics": []
+        }
+    
+    # Analyze sentiment
+    sentiment_data = analyze_sentiment(content)
+    
+    # Extract topics
+    topics = extract_topics(content)
     
     return {
         "title": title,
@@ -283,10 +340,39 @@ def extract_article_content(url: str, source: str) -> Dict[str, Any]:
         "topics": topics
     }
 
+# Initialize sentiment analysis model
+sentiment_analyzer = None
+
+def get_sentiment_analyzer():
+    """
+    Get or initialize the sentiment analysis model.
+    
+    Returns:
+        Transformer pipeline for sentiment analysis
+    """
+    global sentiment_analyzer
+    if sentiment_analyzer is None:
+        try:
+            # Initialize the transformer-based sentiment analysis model
+            sentiment_analyzer = pipeline(
+                "sentiment-analysis",
+                model="distilbert-base-uncased-finetuned-sst-2-english",
+                truncation=True
+            )
+            logger.info("Initialized transformer-based sentiment analysis model")
+        except Exception as e:
+            logger.error(f"Error initializing transformer model: {e}")
+            # Fall back to VADER if transformer model fails
+            logger.info("Falling back to VADER for sentiment analysis")
+            sentiment_analyzer = "vader"
+    
+    return sentiment_analyzer
+
 # Sentiment Analysis Functions
 def analyze_sentiment(text: str) -> Dict[str, Any]:
     """
-    Analyze the sentiment of a text using VADER.
+    Analyze the sentiment of a text using a transformer-based model.
+    Falls back to VADER if the transformer model is unavailable.
     
     Args:
         text: Text to analyze
@@ -304,35 +390,106 @@ def analyze_sentiment(text: str) -> Dict[str, Any]:
         }
     
     try:
-        sid = SentimentIntensityAnalyzer()
-        sentiment_scores = sid.polarity_scores(text)
+        analyzer = get_sentiment_analyzer()
         
-        # Determine sentiment category
-        compound = sentiment_scores['compound']
-        if compound >= 0.05:
-            category = "Positive"
-        elif compound <= -0.05:
-            category = "Negative"
+        if analyzer == "vader":
+            # Use VADER as fallback
+            sid = SentimentIntensityAnalyzer()
+            sentiment_scores = sid.polarity_scores(text)
+            
+            # Determine sentiment category
+            compound = sentiment_scores['compound']
+            if compound >= 0.05:
+                category = "Positive"
+            elif compound <= -0.05:
+                category = "Negative"
+            else:
+                category = "Neutral"
+            
+            return {
+                "compound": sentiment_scores['compound'],
+                "positive": sentiment_scores['pos'],
+                "negative": sentiment_scores['neg'],
+                "neutral": sentiment_scores['neu'],
+                "category": category
+            }
         else:
-            category = "Neutral"
-        
-        return {
-            "compound": sentiment_scores['compound'],
-            "positive": sentiment_scores['pos'],
-            "negative": sentiment_scores['neg'],
-            "neutral": sentiment_scores['neu'],
-            "category": category
-        }
+            # Use transformer model
+            # Limit text length to avoid issues with long articles
+            # Most transformer models have a token limit (e.g., 512 tokens)
+            # We'll use the first 1000 characters as a representative sample
+            sample_text = text[:1000]
+            
+            # Get sentiment prediction
+            result = analyzer(sample_text)[0]
+            label = result['label']
+            score = result['score']
+            
+            # Map to our expected format
+            if label == "POSITIVE":
+                category = "Positive"
+                positive_score = score
+                negative_score = 1 - score
+                neutral_score = 0.0
+                compound_score = score * 2 - 1  # Scale from [0,1] to [-1,1]
+            elif label == "NEGATIVE":
+                category = "Negative"
+                positive_score = 1 - score
+                negative_score = score
+                neutral_score = 0.0
+                compound_score = -score * 2 + 1  # Scale from [0,1] to [-1,1]
+            else:
+                # This shouldn't happen with the default model, but just in case
+                category = "Neutral"
+                positive_score = 0.5
+                negative_score = 0.5
+                neutral_score = 0.0
+                compound_score = 0.0
+            
+            return {
+                "compound": compound_score,
+                "positive": positive_score,
+                "negative": negative_score,
+                "neutral": neutral_score,
+                "category": category,
+                "model": "transformer"  # Add this to indicate we used the advanced model
+            }
     
     except Exception as e:
         logger.error(f"Error analyzing sentiment: {e}")
-        return {
-            "compound": 0,
-            "positive": 0,
-            "negative": 0,
-            "neutral": 0,
-            "category": "Neutral"
-        }
+        
+        # Try VADER as a fallback if transformer fails
+        try:
+            sid = SentimentIntensityAnalyzer()
+            sentiment_scores = sid.polarity_scores(text)
+            
+            # Determine sentiment category
+            compound = sentiment_scores['compound']
+            if compound >= 0.05:
+                category = "Positive"
+            elif compound <= -0.05:
+                category = "Negative"
+            else:
+                category = "Neutral"
+            
+            return {
+                "compound": sentiment_scores['compound'],
+                "positive": sentiment_scores['pos'],
+                "negative": sentiment_scores['neg'],
+                "neutral": sentiment_scores['neu'],
+                "category": category,
+                "model": "vader_fallback"  # Indicate we fell back to VADER
+            }
+        except:
+            # If all else fails, return neutral
+            return {
+                "compound": 0,
+                "positive": 0,
+                "negative": 0,
+                "neutral": 1,
+                "category": "Neutral",
+                "model": "none"  # Indicate no model was used
+            }
 
 def extract_topics(text: str, n_topics: int = 5) -> List[str]:
     """
